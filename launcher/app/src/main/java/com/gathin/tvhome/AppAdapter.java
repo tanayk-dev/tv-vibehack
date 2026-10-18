@@ -9,9 +9,16 @@ import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Outline;
+import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.Shader;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.media.tv.TvContract;
+import android.media.tv.TvInputInfo;
+import android.media.tv.TvInputManager;
 import android.net.Uri;
 import android.provider.Settings;
 import android.view.KeyEvent;
@@ -50,7 +57,10 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     static final class Entry {
         final String label;
         final ComponentName component;
+        /** Package name, or the whole dock_apps item for an input tile. Used for dock ordering. */
         final String pkg;
+        /** TV input id for an input tile (switches to that HDMI/AV port), null for apps. */
+        final String inputId;
         final Drawable banner;
         final Drawable icon;
         int ambient;
@@ -59,10 +69,24 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             this.label = label;
             this.component = component;
             this.pkg = component.getPackageName();
+            this.inputId = null;
             this.banner = banner;
             this.icon = icon;
         }
+
+        Entry(String label, String key, String inputId, Drawable banner, int ambient) {
+            this.label = label;
+            this.component = null;
+            this.pkg = key;
+            this.inputId = inputId;
+            this.banner = banner;
+            this.icon = null;
+            this.ambient = ambient;
+        }
     }
+
+    /** Prefix for dock_apps items that are TV inputs: input:&lt;input id&gt;|&lt;label&gt;|&lt;#colour&gt;. */
+    static final String INPUT_PREFIX = "input:";
 
     static final float FOCUS_SCALE = 1.10f;
 
@@ -98,6 +122,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             String label = String.valueOf(ri.loadLabel(pm));
             fresh.add(new Entry(label, new ComponentName(pkg, ri.activityInfo.name), banner, icon));
         }
+        addInputTiles(fresh);
         Collections.sort(fresh, (a, b) -> {
             int fa = favourites.indexOf(a.pkg), fb = favourites.indexOf(b.pkg);
             if (fa >= 0 || fb >= 0) {
@@ -110,6 +135,80 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         items.clear();
         items.addAll(fresh);
         notifyDataSetChanged();
+    }
+
+    /** Adds a tile for each input:... item in dock_apps whose input exists on this TV. */
+    private void addInputTiles(List<Entry> out) {
+        TvInputManager tim = (TvInputManager) ctx.getSystemService(Context.TV_INPUT_SERVICE);
+        if (tim == null) return;
+        for (String item : favourites) {
+            if (!item.startsWith(INPUT_PREFIX)) continue;
+            String[] parts = item.substring(INPUT_PREFIX.length()).split("\\|");
+            String id = parts[0].trim();
+            TvInputInfo info = tim.getTvInputInfo(id);
+            if (info == null) continue;
+            String label = parts.length > 1 && !parts[1].trim().isEmpty() ? parts[1].trim() : inputLabel(info);
+            int color = 0xFF3A3A40;
+            if (parts.length > 2) {
+                try {
+                    color = Color.parseColor(parts[2].trim());
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+            out.add(new Entry(label, item, id, inputBanner(label, color), color));
+        }
+    }
+
+    private String inputLabel(TvInputInfo info) {
+        CharSequence l = info.loadCustomLabel(ctx);
+        if (l == null || l.length() == 0) l = info.loadLabel(ctx);
+        return l == null ? info.getId() : l.toString();
+    }
+
+    /** A banner for an input tile: the label in large type over a diagonal gradient of its colour. */
+    private Drawable inputBanner(String label, int color) {
+        float d = ctx.getResources().getDisplayMetrics().density;
+        int w = (int) (180 * d), h = (int) (101 * d);
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        float[] hsv = new float[3];
+        Color.colorToHSV(color, hsv);
+        hsv[2] *= 0.45f;
+        Paint bg = new Paint();
+        bg.setShader(new LinearGradient(0, 0, w, h, color, Color.HSVToColor(hsv), Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, bg);
+
+        Drawable icon = ctx.getDrawable(R.drawable.ic_input);
+        if (icon != null) {
+            int s = (int) (18 * d), m = (int) (12 * d);
+            icon.setBounds(m, m, m + s, m + s);
+            icon.setAlpha(170);
+            icon.draw(c);
+        }
+        Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+        text.setColor(Color.WHITE);
+        text.setTypeface(ctx.getResources().getFont(R.font.outfit));
+        text.setFontVariationSettings("'wght' 500");
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTextSize(30 * d);
+        float max = w - 24 * d;
+        if (text.measureText(label) > max) text.setTextSize(text.getTextSize() * max / text.measureText(label));
+        Paint.FontMetrics fm = text.getFontMetrics();
+        c.drawText(label, w / 2f, h / 2f - (fm.ascent + fm.descent) / 2f, text);
+        return new BitmapDrawable(ctx.getResources(), bmp);
+    }
+
+    /** Switches the TV to the given input through the TV input framework. */
+    static boolean switchToInput(Context ctx, String inputId) {
+        Intent i = new Intent(Intent.ACTION_VIEW)
+                .setDataAndType(TvContract.buildChannelUriForPassthroughInput(inputId), "vnd.android.cursor.item/channel")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            ctx.startActivity(i);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            return false;
+        }
     }
 
     @NonNull
@@ -142,6 +241,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         }
         h.card.setOnClickListener(v -> launch(e));
         h.card.setOnLongClickListener(v -> {
+            if (e.inputId != null) return true;
             Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + e.pkg));
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try {
@@ -153,6 +253,10 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     }
 
     private void launch(Entry e) {
+        if (e.inputId != null) {
+            if (!switchToInput(ctx, e.inputId)) Toast.makeText(ctx, "Can't open " + e.label, Toast.LENGTH_SHORT).show();
+            return;
+        }
         Intent i = new Intent(Intent.ACTION_MAIN)
                 .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
                 .setComponent(e.component)

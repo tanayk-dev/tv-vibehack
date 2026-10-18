@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
@@ -53,6 +54,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Tiles per row and dock slots (res/values/config.xml, columns). Set in onCreate. */
     static int COLUMNS = 4;
     private static final long MINUTE_MS = 60_000L;
+    private static final String PREF_BOOT_INPUT_DONE = "boot_input_done";
     private String liveTvPkg;
 
     private AppAdapter adapter;
@@ -179,6 +181,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         updateGreeting();
         updateWifiLabel();
         handler.postDelayed(minuteTick, MINUTE_MS);
+        switchToBootInputOncePerBoot();
 
         // Return to the tile we left from, or the first one.
         grid.post(() -> {
@@ -186,6 +189,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (focused != null && grid.findContainingViewHolder(focused) != null) return;
             focusTile(lastFocused);
         });
+    }
+
+    /**
+     * Many TVs have no "power on to input" setting. When config.xml sets boot_input, switch to it the first
+     * time the home screen shows after each boot. Settings.Global.BOOT_COUNT tells boots apart, so a launcher
+     * restart doesn't switch again. Right after install it only records the current boot.
+     */
+    private void switchToBootInputOncePerBoot() {
+        String id = getString(R.string.boot_input).trim();
+        if (id.isEmpty()) return;
+        int boot = Settings.Global.getInt(getContentResolver(), Settings.Global.BOOT_COUNT, -1);
+        SharedPreferences prefs = getSharedPreferences("state", MODE_PRIVATE);
+        boolean firstRun = !prefs.contains(PREF_BOOT_INPUT_DONE);
+        if (boot < 0 || prefs.getInt(PREF_BOOT_INPUT_DONE, -1) == boot) return;
+        prefs.edit().putInt(PREF_BOOT_INPUT_DONE, boot).apply();
+        if (firstRun) return;
+        // Give the TV input service a moment after boot before switching.
+        handler.postDelayed(() -> AppAdapter.switchToInput(this, id), 1500);
     }
 
     @Override
@@ -368,15 +389,26 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
                 WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
                 WifiInfo info = wm != null ? wm.getConnectionInfo() : null;
-                String ssid = info != null ? info.getSSID() : null;
-                if (ssid != null) {
-                    ssid = ssid.replace("\"", "").trim();
-                    if (!ssid.isEmpty() && !ssid.contains("unknown") && !ssid.equals("0x")) text = ssid;
+                String ssid = cleanSsid(info != null ? info.getSSID() : null);
+                // With Location turned off Android hides the SSID from WifiInfo; on some versions the
+                // network's extra info still carries it.
+                if (ssid == null) {
+                    android.net.NetworkInfo ni = cm.getNetworkInfo(net);
+                    ssid = cleanSsid(ni != null ? ni.getExtraInfo() : null);
                 }
+                if (ssid != null) text = ssid;
             }
         } catch (Exception ignored) {
         }
         btnWifi.setText(text);
+    }
+
+    /** The SSID without quotes, or null when it is missing or redacted. */
+    private static String cleanSsid(String ssid) {
+        if (ssid == null) return null;
+        ssid = ssid.replace("\"", "").trim();
+        if (ssid.isEmpty() || ssid.contains("unknown") || ssid.equals("0x")) return null;
+        return ssid;
     }
 
     private void open(Intent i) {

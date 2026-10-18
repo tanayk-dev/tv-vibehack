@@ -9,7 +9,8 @@ export ANDROID_HOME="${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetool
 export PATH="$JAVA_HOME/bin:$PATH"
 [ -f local.properties ] || echo "sdk.dir=$ANDROID_HOME" > local.properties
 ./gradlew assembleDebug -q --console=plain
-PY=../tools/venv/bin/python
+PY=../tools/venv/bin/python; [ -x "$PY" ] || PY=../tools/venv/Scripts/python  # Windows venv layout
+export MSYS_NO_PATHCONV=1   # Git Bash on Windows would rewrite /data/local/tmp/... into a Windows path
 APK=app/build/outputs/apk/debug/app-debug.apk
 "$PY" -I ../tools/b64push.py "$APK" /data/local/tmp/tvhome.apk
 printf '%s\n' \

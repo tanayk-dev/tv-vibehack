@@ -5,13 +5,20 @@
 -->
 <resources>
 
-    <!-- Apps pinned to the dock row at the bottom, in this order. Missing apps are skipped. -->
+    <!-- Apps pinned to the dock row at the bottom, in this order. Missing apps are skipped.
+         A TV input can be a dock tile too: input:<input id>|<label>|<#colour>. Label and colour are
+         optional (the label defaults to the name set in Settings → Inputs). Input ids:
+         tools/tv.py 'dumpsys tv_input | grep "info: TvInputInfo"' -->
     <string-array name="dock_apps">
-        <item>com.netflix.ninja</item>
-        <item>com.amazon.amazonvideo.livingroom</item>
+        <item>input:com.mediatek.tvinput/.hdmi.HDMIInputService/HW5|Jio|#1F4FD6</item>
+        <item>input:com.mediatek.tvinput/.hdmi.HDMIInputService/HW6|CCTV|#2E7D5B</item>
         <item>com.google.android.youtube.tv</item>
-        <item>in.startv.hotstar</item>
+        <item>com.android.vending</item>
     </string-array>
+
+    <!-- Input to switch to once after every boot, for TVs without a "power on to input" setting.
+         Leave empty to stay on the home screen. -->
+    <string name="boot_input" translatable="false">com.mediatek.tvinput/.hdmi.HDMIInputService/HW5</string>
 
     <!-- Apps never shown as tiles (e.g. the Live TV app, which the Inputs menu already covers). -->
     <string-array name="hidden_apps">

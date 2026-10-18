@@ -1,0 +1,39 @@
+# Realme Android TV (model "AI PONT", made by Changhong/Homwee, MediaTek, codename ikebukuro),
+# Android TV 11, firmware RTO2.250804.001 / V2.00048
+# Probably also a good starting point for other Homwee-built Android TVs.
+#
+# Apply:   TV_HOST=<tv ip> tools/disable.sh examples/realme-ai-pont/debloat.txt
+# Undo:    TV_HOST=<tv ip> tools/restore.sh examples/realme-ai-pont/debloat.txt
+# Everything is DISABLED, not uninstalled. Comment out any line you want to keep.
+#
+# Inputs on this set: HDMI 1 = .../HDMIInputService/HW4, HDMI 2 = HW5, HDMI 3 = HW6.
+# The firmware has no "power on to input" setting; launcher/ config.xml boot_input does it instead.
+# Left alone on purpose: com.mediatek.* (inputs, picture, remote pairing), com.homwee.factory,
+# com.homwee.synckey, com.homwee.overlay.tvservice.
+
+# Telemetry and ads
+tv.anoki.acr.controller                # ACR: fingerprints what's on screen, HDMI inputs included
+com.google.android.feedback
+
+# Manufacturer content rows / promos
+com.homwee.aipont                      # "AI PONT" promo channels
+com.google.android.tvrecommendations   # "Top Selling / Trending" rows
+
+# Homwee preloads
+com.homwee.store                       # manufacturer app store, Play Store stays
+com.homwee.help
+com.homwee.howtocast
+com.homwee.multiscreenshare            # screen mirroring
+com.homwee.mmp.screenshare             # screen mirroring
+com.homwee.mmp.fileexplorer            # USB media player
+com.homwee.mmp.imageplayer             # USB photo viewer
+
+# Preloaded apps (this owner streams through a set-top box on HDMI)
+com.amazon.amazonvideo.livingroom      # Prime Video
+com.google.android.play.games
+
+# Kept on this TV, uncomment to disable:
+# com.google.android.apps.mediashell   # Chromecast
+# com.google.android.katniss           # Google Assistant / voice search
+# com.homwee.dmt.upgrade               # firmware updates
+# com.google.android.youtube.tv        # YouTube
